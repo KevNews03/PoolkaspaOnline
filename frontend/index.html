@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Kaspa Pool Dashboard</title>
+  <link rel="stylesheet" href="style.css"/>
+  <!-- Chart.js pour l’historique de hashrate -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>Kaspa Pool Dashboard</h1>
+
+    <section class="stats-grid">
+      <div class="stat-card">
+        <h2>Pool Hashrate</h2>
+        <p id="stat-pool-hashrate">...</p>
+      </div>
+      <div class="stat-card">
+        <h2>Network Hashrate</h2>
+        <p id="stat-network-hashrate">...</p>
+      </div>
+      <div class="stat-card">
+        <h2>Miners Connected</h2>
+        <p id="stat-miners">...</p>
+      </div>
+    </section>
+
+    <section class="chart-section">
+      <h2>Hashrate Over Time</h2>
+      <canvas id="hashrate-chart" width="600" height="300"></canvas>
+    </section>
+
+    <section class="lookup-section">
+      <h2>Lookup Miner</h2>
+      <div class="lookup-form">
+        <input type="text" id="miner-address" placeholder="kaspa:..." />
+        <button id="lookup-button">Search</button>
+      </div>
+      <div id="miner-info"></div>
+    </section>
+  </div>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>

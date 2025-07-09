@@ -1,17 +1,24 @@
 import dotenv from 'dotenv';
-dotenv.config({ path: '../.env' });
 import fetch from 'node-fetch';
 import { MongoClient } from 'mongodb';
 
-// RPC configuration
-const rpcUrl = `http://${process.env.KASPAD_RPC_HOST}:${process.env.KASPAD_RPC_PORT}/rpc`;
-const auth = Buffer.from(`${process.env.KASPAD_RPC_USER}:${process.env.KASPAD_RPC_PASS}`).toString('base64');
-const headers = {
-  'Content-Type': 'application/json',
-  'Authorization': `Basic ${auth}`,
-};
+dotenv.config({ path: '../.env' });
 
-export async function rpc(method, params = []) {
+// RPC setup
+const rpcUrl = `http://${process.env.KASPAD_RPC_HOST}:${process.env.KASPAD_RPC_PORT}/rpc`;
+const auth   = Buffer.from(`${process.env.KASPAD_RPC_USER}:${process.env.KASPAD_RPC_PASS}`).toString('base64');
+const headers = { 'Content-Type': 'application/json', 'Authorization': `Basic ${auth}` };
+
+// MongoDB URI
+const dbUser = encodeURIComponent(process.env.DB_USER);
+const dbPass = encodeURIComponent(process.env.DB_PASS);
+const dbHost = process.env.DB_HOST;
+const dbPort = process.env.DB_PORT;
+const dbName = process.env.DB_NAME;
+const mongoUri = `mongodb://${dbUser}:${dbPass}@${dbHost}:${dbPort}/${dbName}?authSource=${dbName}`;
+
+// Helper RPC call
+async function rpc(method, params = []) {
   const res = await fetch(rpcUrl, {
     method: 'POST',
     headers,
@@ -22,24 +29,46 @@ export async function rpc(method, params = []) {
   return result;
 }
 
-export function getNetworkStats() {
+export async function getNetworkStats() {
   return rpc('getNetworkInfo');
 }
 
 export async function processPayments() {
-  // Connect to MongoDB
-  const user = encodeURIComponent(process.env.DB_USER);
-  const pass = encodeURIComponent(process.env.DB_PASS);
-  const host = process.env.DB_HOST;
-  const port = process.env.DB_PORT;
-  const dbName = process.env.DB_NAME;
-  const uri = `mongodb://${user}:${pass}@${host}:${port}/${dbName}?authSource=${dbName}`;
-  const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
+  const client = new MongoClient(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true });
   await client.connect();
+  const db = client.db(dbName);
+  const sharesCol   = db.collection('shares');
+  const paymentsCol = db.collection('payments');
 
-  // TODO: implement share aggregation, calculate balances
-  // TODO: filter miners with balance >= PAYMENT_THRESHOLD
-  // TODO: send payments via RPC subtracting FEE_PERCENT
+  // 1) Récupère et agrège les parts par adresse
+  const agg = await sharesCol.aggregate([
+    { $group: { _id: '$address', count: { $sum: 1 } } }
+  ]).toArray();
+
+  if (agg.length === 0) {
+    await client.close();
+    return; // Pas de shares à payer
+  }
+
+  // 2) Calcule la commission
+  const totalShares = agg.reduce((sum, r) => sum + r.count, 0);
+  const feePercent  = parseFloat(process.env.FEE_PERCENT);
+  const commission  = totalShares * (feePercent / 100);
+
+  // 3) Envoie la commission à l'adresse du pool
+  await rpc('sendToAddress', [process.env.POOL_ADDRESS, commission]);
+
+  // 4) Payer chaque mineur
+  const threshold = parseFloat(process.env.PAYMENT_THRESHOLD);
+  for (const { _id: address, count } of agg) {
+    const payout = count * (1 - feePercent / 100);
+    if (payout < threshold) continue;
+    await rpc('sendToAddress', [address, payout]);
+    await paymentsCol.insertOne({ address, amount: payout, date: new Date() });
+  }
+
+  // 5) Vide la collection de shares pour repartir à zéro
+  await sharesCol.deleteMany({});
 
   await client.close();
 }

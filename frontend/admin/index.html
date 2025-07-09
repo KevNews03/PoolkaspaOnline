@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Kaspa Pool Admin</title>
+  <link rel="stylesheet" href="../style.css"/>
+</head>
+<body>
+  <div class="container">
+    <h1>Admin Panel</h1>
+
+    <section class="admin-section">
+      <h2>Pool Settings</h2>
+      <form id="settings-form">
+        <label>
+          Fee (%):
+          <input type="number" step="0.1" id="fee-input" />
+        </label>
+        <label>
+          Payout Threshold (KAS):
+          <input type="number" step="0.1" id="threshold-input" />
+        </label>
+        <button type="submit">Save Settings</button>
+      </form>
+    </section>
+
+    <section class="admin-section">
+      <h2>Payment History</h2>
+      <table id="payments-table">
+        <thead>
+          <tr>
+            <th>Address</th>
+            <th>Amount (KAS)</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Rows inserted dynamically -->
+        </tbody>
+      </table>
+    </section>
+  </div>
+
+  <script src="admin.js"></script>
+</body>
+</html>

@@ -1,47 +1,72 @@
 import dotenv from 'dotenv';
-dotenv.config({ path: '../.env' });
-
 import net from 'net';
+import { MongoClient } from 'mongodb';
+
+dotenv.config({ path: '../.env' });
 
 const PORT = Number(process.env.STRATUM_PORT);
 
-// Crée un serveur TCP Stratum
-const server = net.createServer(socket => {
-  socket.setEncoding('utf8');
-  // Accusé de réception initial
-  socket.write(JSON.stringify({ result: ['OK'], error: null, id: 1 }) + '\n');
+// MongoDB setup (une connexion persistante)
+const dbUser = encodeURIComponent(process.env.DB_USER);
+const dbPass = encodeURIComponent(process.env.DB_PASS);
+const dbHost = process.env.DB_HOST;
+const dbPort = process.env.DB_PORT;
+const dbName = process.env.DB_NAME;
+const mongoUri = `mongodb://${dbUser}:${dbPass}@${dbHost}:${dbPort}/${dbName}?authSource=${dbName}`;
+const mongoClient = new MongoClient(mongoUri, { useNewUrlParser: true, useUnifiedTopology: true });
 
-  socket.on('data', data => {
-    try {
-      const req = JSON.parse(data);
-      let response;
+async function startStratum() {
+  await mongoClient.connect();
+  const sharesCol = mongoClient.db(dbName).collection('shares');
 
-      switch (req.method) {
-        case 'mining.subscribe':
-          // Envoie l'abonnement (simulé)
-          response = { id: req.id, result: ['subscription_id'], error: null };
-          break;
+  const server = net.createServer(socket => {
+    socket.setEncoding('utf8');
+    // Acknowledge new connection
+    socket.write(JSON.stringify({ result: ['OK'], error: null, id: 1 }) + '\n');
 
-        case 'mining.authorize':
-          // Autorise toujours
-          response = { id: req.id, result: true, error: null };
-          break;
+    socket.on('data', async data => {
+      try {
+        const req = JSON.parse(data);
+        let response;
 
-        case 'mining.submit':
-          const [wallet, jobId, nonce] = req.params;
-          // TODO: enregistrer la share (wallet, jobId, nonce)
-          response = { id: req.id, result: true, error: null };
-          break;
+        switch (req.method) {
+          case 'mining.subscribe':
+            response = { id: req.id, result: ['subscription_id'], error: null };
+            break;
 
-        default:
-          response = { id: req.id, result: null, error: 'Unknown method' };
+          case 'mining.authorize':
+            response = { id: req.id, result: true, error: null };
+            break;
+
+          case 'mining.submit':
+            const [wallet, jobId, nonce] = req.params;
+            // Enregistre la share
+            await sharesCol.insertOne({
+              address: wallet,
+              jobId,
+              nonce,
+              timestamp: new Date()
+            });
+            response = { id: req.id, result: true, error: null };
+            break;
+
+          default:
+            response = { id: req.id, result: null, error: 'Unknown method' };
+        }
+
+        socket.write(JSON.stringify(response) + '\n');
+      } catch (err) {
+        socket.write(JSON.stringify({ result: null, error: err.message, id: null }) + '\n');
       }
-
-      socket.write(JSON.stringify(response) + '\n');
-    } catch (err) {
-      socket.write(JSON.stringify({ result: null, error: err.message, id: null }) + '\n');
-    }
+    });
   });
-});
 
-server.listen(PORT, () => console.log(`🎰 Stratum server listening on port ${PORT}`));
+  server.listen(PORT, () => {
+    console.log(`🎰 Stratum server listening on port ${PORT}`);
+  });
+}
+
+startStratum().catch(err => {
+  console.error('❌ Stratum startup error:', err);
+  process.exit(1);
+});
